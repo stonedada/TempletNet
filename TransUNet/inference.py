@@ -1,14 +1,15 @@
 import argparse
 import logging
 import os
+import sys
 import time
 import imageio
+import tifffile
 from torch.nn.modules.loss import MSELoss
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from torchvision.utils import save_image
 from torch.autograd import Variable
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5"
 import random
 import torch
 import torch.backends.cudnn as cudnn
@@ -20,6 +21,8 @@ from utils.util import make_dataframe, DF_NAMES
 from custom_metrics import *
 from utils.config import get_device
 from models.TransformerUNetParallel import TransformerUNet
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--volume_path', type=str,
@@ -51,11 +54,9 @@ args = parser.parse_args()
 
 
 def test(args, model, snapshot_path):
-
-
-    save_path = test_save_path if args.is_savenii else os.path.join('../predictions', args.model_path,"test_out_image")
+    save_path = test_save_path if args.is_savenii else os.path.join('../predictions', args.model_path, "test_out_image")
     os.makedirs(save_path, exist_ok=True)
-    
+
     db_train = Synapse_dataset(base_dir=args.volume_path, label_dir=args.label_dir, split="train",
                                transform=transforms.Compose(
                                    [RandomGenerator(output_size=args.size)]))
@@ -68,10 +69,10 @@ def test(args, model, snapshot_path):
                              worker_init_fn=worker_init_fn)
 
     model.eval()
-    mse_loss = MSELoss()   
+    mse_loss = MSELoss()
     iter_num = 0
-    thresh = 2
-    
+    thresh = 1
+
     loss_bank = []
     nrmse_bank = []
     ssim_bank = []
@@ -79,40 +80,44 @@ def test(args, model, snapshot_path):
     iou_bank = []
     pcc_bank = []
     r2_bank = []
-    
-    frames_meta = make_dataframe(nbr_rows=len(trainloader))  
+
+    frames_meta = make_dataframe(nbr_rows=len(trainloader))
     with torch.no_grad():
         for i_batch, sampled_batch in enumerate(trainloader):
             image_batch, label_batch = sampled_batch['image'], sampled_batch['label']
             # image_batch, label_batch = image_batch.cuda(), label_batch.cuda()
-            image_batch, label_batch = Variable(image_batch.to(device=args.device)),label_batch.to(device='cuda:0')
+            image_batch, label_batch = Variable(image_batch.to(device=args.device)), label_batch.to(device='cuda:0')
             outputs = model(image_batch)
 
             x_true = torch.squeeze(label_batch).cpu().numpy()
             x_pre = torch.squeeze(outputs).cpu().numpy()
 
             loss = mse_loss(outputs, label_batch)
-            dice = mean_dice(x_true, x_pre,thresh)
-            mIoU = mean_iou(x_true, x_pre,thresh)
+            dice = mean_dice(x_true, x_pre, thresh)
+            mIoU = mean_iou(x_true, x_pre, thresh)
             nrmse = metrics.normalized_root_mse(x_true, x_pre)
             mse = metrics.mean_squared_error(x_true, x_pre)
             ssim_val = metrics.structural_similarity(x_true, x_pre)
             pcc = pearsonr(x_pre.flatten(), x_true.flatten())
             r2 = r2_metric(x_true, x_pre)
-            
+
             for k in range(outputs.shape[0]):
-                prediction = torch.squeeze(outputs[k],dim=0)
-                _image = torch.squeeze(image_batch[k])
-                _label = torch.squeeze(label_batch[k],dim=0)
+                prediction = torch.squeeze(outputs[k]).cpu().numpy()
+                _image = torch.squeeze(image_batch[k]).cpu().numpy()
+                _label = torch.squeeze(label_batch[k]).cpu().numpy()
                 # image(1,128,128)
-                
+
                 # imageio.imwrite(f'{save_path}/{i_batch}_{k}_prediction.jpg', prediction)
                 # imageio.imwrite(f'{save_path}/{i_batch}_{k}_image.jpg', _image)
                 # imageio.imwrite(f'{save_path}/{i_batch}_{k}_label.jpg', _label)
-                save_image(prediction,f'{save_path}/{i_batch}_{k}_prediction.png')
-                save_image(_image,f'{save_path}/{i_batch}_{k}_image.png')
-                save_image(_label,f'{save_path}/{i_batch}_{k}_label.png')
-                
+                # save_image(prediction, f'{save_path}/{i_batch}_{k}_prediction.png')
+                # save_image(_image, f'{save_path}/{i_batch}_{k}_image.png')
+                # save_image(_label, f'{save_path}/{i_batch}_{k}_label.png')
+
+                tifffile.imwrite(f'{save_path}/{i_batch}_{k}_prediction.tif', data=prediction)
+                tifffile.imwrite(f'{save_path}/{i_batch}_{k}_image.tif', data=_image)
+                tifffile.imwrite(f'{save_path}/{i_batch}_{k}_label.tif', data=_label)
+
             iter_num = iter_num + 1
 
             # Save csv.file
@@ -136,15 +141,15 @@ def test(args, model, snapshot_path):
             r2_bank.append(r2)
 
             logging.info('iteration %d : Loss: %.4f,NRMSE: %f,ssim: %f,PCC: %f,dice: %f,mIoU: %f,R2: %f' % (
-                iter_num, loss.item(), nrmse, ssim_val, pcc, dice, mIoU,r2))
-        
+                iter_num, loss.item(), nrmse, ssim_val, pcc, dice, mIoU, r2))
 
-        frames_meta_filename = os.path.join("../predictions", args.model_path,f"inference_{args.model_name}_{args.day_time}.csv")
+        frames_meta_filename = os.path.join("../predictions", args.model_path,
+                                            f"inference_{args.model_name}_{args.day_time}.csv")
         frames_meta.to_csv(frames_meta_filename, sep=',')
 
         print('MSELoss: {:.4f}, NRMSE: {:.4f}, Dice: {:.4f}, IoU: {:.4f}, ssim:{:.4f}, PCC:{:.4f}, R2:{:.4f}'.
               format(np.mean(loss_bank), np.mean(nrmse_bank), np.mean(dice_bank), np.mean(iou_bank),
-                     np.mean(ssim_bank), np.mean(pcc_bank),np.mean(r2_bank)))
+                     np.mean(ssim_bank), np.mean(pcc_bank), np.mean(r2_bank)))
 
         return np.mean(loss_bank)
 
@@ -180,7 +185,6 @@ if __name__ == "__main__":
     args.exp = 'TU_' + dataset_name + str(args.img_size)
     snapshot_path = "../model/{}/{}".format(args.exp, args.model_name)
 
-    
     # ---- build new models ----
 
     # channels = (3, 32, 64, 128, 256, 512)
@@ -193,23 +197,23 @@ if __name__ == "__main__":
     bias = True
     heads = 4
     size = (128, 128)
-    
+
     model_path = f'res_{is_residual}_head_{heads}_ch_{channels[-1]}'
-    
+
     device = get_device()
     print(device, torch.cuda.device_count())
-    
+
     args.model_path = model_path
-    args.device=device
-    args.size=size
-    
+    args.device = device
+    args.size = size
+
     model = TransformerUNet(channels, heads, size[0], is_residual, bias)
-    
+
     # load checkpoint
     snapshot = os.path.join(snapshot_path, 'best_model.pth')
-    if not os.path.exists(snapshot): snapshot = snapshot.replace('best_model', f'{args.model_path}-'+ str(56))
+    if not os.path.exists(snapshot): snapshot = snapshot.replace('best_model', f'{args.model_path}-' + str(56))
     print('snapshot', snapshot, os.path.exists(snapshot))
-    
+
     model.load_state_dict(torch.load(snapshot), strict=False)
     snapshot_name = snapshot_path.split('/')[-1]
 
@@ -220,12 +224,12 @@ if __name__ == "__main__":
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(args))
     logging.info(snapshot_name)
-    
-    timestamp=time.time()
-    tupletime=time.localtime(timestamp)
-    day_time= str(tupletime[1])+'_'+str(tupletime[2])+'_'+str(tupletime[3])   
-    args.day_time =day_time
-    
+
+    timestamp = time.time()
+    tupletime = time.localtime(timestamp)
+    day_time = str(tupletime[1]) + '_' + str(tupletime[2]) + '_' + str(tupletime[3])
+    args.day_time = day_time
+
     if args.is_savenii:
         args.test_save_dir = '../predictions'
         test_save_path = os.path.join(args.test_save_dir, args.model_path, f"test_{args.model_name}_{args.day_time}")
