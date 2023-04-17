@@ -16,6 +16,7 @@ from utils.util import make_dataframe, DF_NAMES
 from utils.custom_metrics import *
 from utils.config import get_device
 from models.TransformerUNetParallel import TransformerUNetParallel
+from models.TransformerUNet import TransformerUNet
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
@@ -82,7 +83,7 @@ def test(args, model):
         for i_batch, sampled_batch in enumerate(trainloader):
             image_batch, label_batch = sampled_batch['image'], sampled_batch['label']
             # image_batch, label_batch = image_batch.cuda(), label_batch.cuda()
-            image_batch, label_batch = Variable(image_batch.to(device=args.device)), label_batch.to(device='cuda:0')
+            # image_batch, label_batch = Variable(image_batch.to(device=args.device)), label_batch.to(device='cuda:0')
             outputs = model(image_batch)
 
             x_true = torch.squeeze(label_batch).cpu().numpy()
@@ -166,7 +167,7 @@ if __name__ == "__main__":
     dataset_config = {
         'Synapse': {
             'Dataset': Synapse_dataset,
-            'volume_path': '/home/dataset/npy_256/test',
+            'volume_path': '/home/dataset/npy_1024/test',
             'label_dir': '/home/dataset/npy_256/test_label',
             'num_classes': 9,
         },
@@ -183,11 +184,11 @@ if __name__ == "__main__":
     is_residual = True
     bias = True
     heads = 4
-    size = (128, 128)
+    size = (512, 512)
     # channels = (3, 32, 64, 128)
     # is_residual = True
     # bias = True
-    # heads = 2
+    # heads = 4
     # size = (128, 128)
 
     model_path = f'res_{is_residual}_head_{heads}_ch_{channels[-1]}'
@@ -201,16 +202,18 @@ if __name__ == "__main__":
 
     # name the same snapshot defined in train script!
     args.model_name = "UTransform"
-    args.exp = 'TU_' + dataset_name + str(args.size[0])
+    args.exp = 'TU_' + dataset_name + str(args.img_size)
     snapshot_path = "../model/{}/{}".format(args.exp, args.model_path)
 
-    model = TransformerUNetParallel(channels, heads, size[0], is_residual, bias)
+    # model = TransformerUNetParallel(channels, heads, size[0], is_residual, bias)
+    model = TransformerUNet(channels, heads, is_residual, bias)
+
     # load checkpoint
     snapshot = os.path.join(snapshot_path, 'best_model.pth')
     if not os.path.exists(snapshot): snapshot = snapshot.replace('best_model', f'{args.model_name}-' + str(102))
     print('snapshot', snapshot, os.path.exists(snapshot))
 
-    model.load_state_dict(torch.load(snapshot), strict=False)
+    model.load_state_dict(torch.load(snapshot,map_location='cpu'), strict=False)
     snapshot_name = snapshot_path.split('/')[-1]
 
     log_folder = './test_log/test_log_' + args.exp

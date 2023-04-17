@@ -5,9 +5,7 @@
 import math
 import torch
 import numpy as np
-
-
-
+from scipy.stats._stats_py import _sum_of_squares
 
 
 def mean_dice_np(y_true, y_pred, **kwargs):
@@ -89,39 +87,6 @@ def calcPearson(x,y):
     sumBottom = math.sqrt(x_pow*y_pow)
     p = sumTop/sumBottom
     return p
-
-def _chk_asarray(a, axis):
-    if axis is None:
-        a = np.ravel(a)
-        outaxis = 0
-    else:
-        a = np.asarray(a)
-        outaxis = axis
-
-    if a.ndim == 0:
-        a = np.atleast_1d(a)
-
-    return a, outaxis
-def _sum_of_squares(a, axis=0):
-    """
-    Square each element of the input array, and return the sum(s) of that.
-
-    Parameters
-    ----------
-    a : array_like
-        Input array.
-    axis : int or None, optional
-        Axis along which to calculate. Default is 0. If None, compute over
-        the whole array `a`.
-
-    Returns
-    -------
-    sum_of_squares : ndarray
-        The sum along the given axis for (a**2).
-
-    """
-    a, axis = _chk_asarray(a, axis)
-    return np.sum(a*a, axis)
 def pearsonr(x, y):
 
     # x and y should have same length.

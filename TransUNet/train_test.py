@@ -3,7 +3,7 @@ import logging
 import sys
 from datetime import datetime
 from torch.autograd import Variable
-from torch import optim
+from torch import optim, nn
 from torch.nn import MSELoss, L1Loss
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms
@@ -17,18 +17,18 @@ import torch
 import torch.backends.cudnn as cudnn
 from utils.config import get_device
 
-from models.TransformerUNetParallel import TransformerUNet
-from models import *
+from models.TransformerUNetParallel import TransformerUNetParallel
+from models.TransformerUNet import TransformerUNet
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root_path', type=str,
-                    default='/home/stone/dataset/npy/train',
+                    default='/home/stone/dataset/npy_1024/train',
                     help='root dir for data')
 parser.add_argument('--volume_path', type=str,
-                    default='/home/dataset/npy_256/test',
-                    help='root dir for validation volume data')  
+                    default='/home/dataset/npy_1024/test',
+                    help='root dir for validation volume data')
 parser.add_argument('--dataset', type=str,
                     default='Synapse', help='experiment_name')
 parser.add_argument('--label_dir', type=str,
@@ -54,21 +54,16 @@ parser.add_argument('--seed', type=int,
                     default=1234, help='random seed')
 parser.add_argument('--n_skip', type=int,
                     default=3, help='using number of skip-connect, default is num')
-parser.add_argument('--vit_name', type=str,
-                    default='R50-ViT-B_16', help='select one vit model')
-parser.add_argument('--vit_patches_size', type=int,
-                    default=16, help='vit_patches_size, default is 16')
 args = parser.parse_args()
 
 
 def train(train_loader, model, optimizer, epoch, best_loss, snapshot_path):
     global iter_num
-    
+
     for i, sampled_batch in enumerate(train_loader, start=1):
         image_batch, label_batch = sampled_batch['image'], sampled_batch['label']
         # image_batch, label_batch = image_batch.cuda(), label_batch.cuda()
-        image_batch, label_batch = Variable(image_batch.to(device=device)),label_batch.to(device='cuda:0')
-        
+        image_batch, label_batch = Variable(image_batch.to(device=device)), label_batch.to(device='cuda:0')
 
         # ---- forward ----
         outputs = model(image_batch)
@@ -95,12 +90,12 @@ def train(train_loader, model, optimizer, epoch, best_loss, snapshot_path):
                          loss.data))
 
     if (epoch + 1) % 1 == 0:
-        meanloss = test(args, model, snapshot_path)
+        meanloss = test(args, model)
         if meanloss < best_loss:
             print('new best loss: ', meanloss)
             best_loss = meanloss
-            torch.save(model.state_dict(), snapshot_path + f'/{args.model_path}-%d.pth' % epoch)
-            print('[Saving Snapshot:]', snapshot_path + f'/{args.model_path}-%d.pth' % epoch)
+            torch.save(model.state_dict(), snapshot_path + f'/{args.model_name}-%d.pth' % epoch)
+            print('[Saving Snapshot:]', snapshot_path + f'/{args.model_name}-%d.pth' % epoch)
     return best_loss
 
 
@@ -128,46 +123,47 @@ if __name__ == "__main__":
     args.num_classes = dataset_config[dataset_name]['num_classes']
     args.root_path = dataset_config[dataset_name]['root_path']
     args.label_dir = dataset_config[dataset_name]['label_dir']
-    args.model_name = "UTransform"
-    
-    args.exp = 'TU_' + dataset_name + str(args.img_size)
-    snapshot_path = "../model/{}/{}".format(args.exp, args.model_name)
 
-    if not os.path.exists(snapshot_path):
-        os.makedirs(snapshot_path)
     # ---- build models ----
-    
-    # change to my model #
-    
-    # channels = (3, 32, 64, 128, 256, 512)
+
+    # change to your model #
+    channels = (3, 32, 64, 128, 256, 512)
+    is_residual = True
+    bias = True
+    heads = 4
+    size = (256, 256)
+
+    # channels = (3, 32, 64, 128)
     # is_residual = True
     # bias = True
     # heads = 4
     # size = (128, 128)
-    
-    channels = (3, 32, 64, 128)
-    is_residual = True
-    bias = True
-    heads = 4
-    size = (128, 128)
-    
+
+    # model_path = f'res_{is_residual}_head_{heads}_ch_{channels[-1]}_Tr'
     model_path = f'res_{is_residual}_head_{heads}_ch_{channels[-1]}'
     device = get_device()
     print(device, torch.cuda.device_count())
-    
-    timestamp=time.time()
-    tupletime=time.localtime(timestamp)
-    day_time= str(tupletime[1])+'_'+str(tupletime[2])+'_'+str(tupletime[3])
-    
-    args.day_time =day_time
+
+    timestamp = time.time()
+    tupletime = time.localtime(timestamp)
+    day_time = str(tupletime[1]) + '_' + str(tupletime[2]) + '_' + str(tupletime[3])
+
+    args.day_time = day_time
     args.model_path = model_path
-    args.device=device
-    args.size=size
-    
-    model = TransformerUNet(channels, heads, size[0], is_residual, bias)
+    args.device = device
+    args.size = size
+    args.model_name = "UTransform"
+    # args.model_name = "TransformUNet"
+    args.exp = 'TU_' + dataset_name + str(args.size[0])
+    snapshot_path = "../model/{}/{}".format(args.exp, args.model_path)
+    if not os.path.exists(snapshot_path):
+        os.makedirs(snapshot_path)
+
+    model = TransformerUNetParallel(channels, heads, size[0], is_residual, bias)
+    # model = TransformerUNet(channels, heads, is_residual, bias)
     from datasets.dataset_npy import Synapse_dataset, RandomGenerator
 
-    logging.basicConfig(filename=snapshot_path + f"/{args.model_path}_train_log.txt", level=logging.INFO,
+    logging.basicConfig(filename=snapshot_path + f"/{args.model_name}_train_log.txt", level=logging.INFO,
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(args))
@@ -180,28 +176,29 @@ if __name__ == "__main__":
                                    [RandomGenerator(output_size=size)]))
     print("The length of train set is: {}".format(len(db_train)))
 
-
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
 
 
-    train_loader = DataLoader(db_train, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True,
+    train_loader = DataLoader(db_train, batch_size=1, shuffle=True, num_workers=4, pin_memory=True,
                               worker_init_fn=worker_init_fn)
 
     # if args.n_gpu > 1:
     #     model = nn.DataParallel(model, device_ids=[0, 1, 2, 3])
-        # model.to(device=torch.device('cuda', 0))
-    model.train()
+    # model.to(device=torch.device('cuda', 0))
+
     mse_loss = MSELoss()
     mae_loss = L1Loss()
     optimizer = optim.SGD(model.parameters(), lr=base_lr, momentum=0.9, weight_decay=0.0001)
-    writer = SummaryWriter(snapshot_path + '/log')
+    writer = SummaryWriter(snapshot_path + '/Tensorboard_log')
     total_step = len(train_loader)
     max_epoch = args.max_epochs
     max_iterations = args.max_epochs * len(train_loader)
     logging.info("{} iterations per epoch. {} max iterations ".format(len(train_loader), max_iterations))
     best_loss = 1e5
     iter_num = 0
+
+    model.train()
     for epoch in range(max_epoch):
         best_loss = train(train_loader, model, optimizer, epoch, best_loss, snapshot_path)
 

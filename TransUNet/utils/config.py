@@ -2,6 +2,7 @@ import torch
 
 DTYPE = torch.float32
 USE_GPU = True
+# USE_GPU = False
 
 ACCURACY = 'accuracy'
 DICE_SCORE = 'dice_score'

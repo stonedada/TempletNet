@@ -10,9 +10,9 @@ from TransUNet.models.EncoderDecoder import ConvBlock, EncoderLayer, DecoderLaye
 
 DEVICE = get_device()
 
-class TransformerUNet(nn.Module):
+class TransformerUNetParallel(nn.Module):
     def __init__(self, channels: Tuple[int], num_heads: int = 2, image_size: int = 128, is_residual: bool = False, bias = False) -> None:
-        super(TransformerUNet, self).__init__()
+        super(TransformerUNetParallel, self).__init__()
 
         self.channels = channels
         self.cuda_cores = [f'cuda:{i+1}' for i in reversed(range(1, len(channels) - 1))]
