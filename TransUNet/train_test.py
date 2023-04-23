@@ -27,7 +27,7 @@ parser.add_argument('--root_path', type=str,
                     default='/home/stone/dataset/npy_1024/train',
                     help='root dir for data')
 parser.add_argument('--volume_path', type=str,
-                    default='/home/dataset/npy_1024/test',
+                    default='/home/dataset/npy_128/test',
                     help='root dir for validation volume data')
 parser.add_argument('--dataset', type=str,
                     default='Synapse', help='experiment_name')
@@ -59,16 +59,17 @@ args = parser.parse_args()
 
 def train(train_loader, model, optimizer, epoch, best_loss, snapshot_path):
     global iter_num
-
+    loss_sum = 0
+    loss_total = 0
     for i, sampled_batch in enumerate(train_loader, start=1):
         image_batch, label_batch = sampled_batch['image'], sampled_batch['label']
         # image_batch, label_batch = image_batch.cuda(), label_batch.cuda()
         image_batch, label_batch = Variable(image_batch.to(device=device)), label_batch.to(device='cuda:0')
-
+        bt_size = image_batch.size(0)
         # ---- forward ----
         outputs = model(image_batch)
         # ---- loss function ----
-        loss = mse_loss(outputs, label_batch)
+        loss = mae_loss(outputs, label_batch)
         # ---- backward ----
         optimizer.zero_grad()
         loss.backward()
@@ -76,6 +77,11 @@ def train(train_loader, model, optimizer, epoch, best_loss, snapshot_path):
         lr_ = base_lr * (1.0 - iter_num / max_iterations) ** 0.9
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr_
+        # record loss
+        loss = loss.detach()
+        l = loss.item()
+        loss_sum += l * bt_size
+        loss_total += bt_size
 
         iter_num = iter_num + 1
         writer.add_scalar('info/lr', lr_, iter_num)
@@ -96,7 +102,7 @@ def train(train_loader, model, optimizer, epoch, best_loss, snapshot_path):
             best_loss = meanloss
             torch.save(model.state_dict(), snapshot_path + f'/{args.model_name}-%d.pth' % epoch)
             print('[Saving Snapshot:]', snapshot_path + f'/{args.model_name}-%d.pth' % epoch)
-    return best_loss
+    return best_loss, loss_sum / loss_total
 
 
 if __name__ == "__main__":
@@ -131,7 +137,7 @@ if __name__ == "__main__":
     is_residual = True
     bias = True
     heads = 4
-    size = (256, 256)
+    size = (128, 128)
 
     # channels = (3, 32, 64, 128)
     # is_residual = True
@@ -139,7 +145,6 @@ if __name__ == "__main__":
     # heads = 4
     # size = (128, 128)
 
-    # model_path = f'res_{is_residual}_head_{heads}_ch_{channels[-1]}_Tr'
     model_path = f'res_{is_residual}_head_{heads}_ch_{channels[-1]}'
     device = get_device()
     print(device, torch.cuda.device_count())
@@ -176,6 +181,7 @@ if __name__ == "__main__":
                                    [RandomGenerator(output_size=size)]))
     print("The length of train set is: {}".format(len(db_train)))
 
+
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
 
@@ -197,9 +203,10 @@ if __name__ == "__main__":
     logging.info("{} iterations per epoch. {} max iterations ".format(len(train_loader), max_iterations))
     best_loss = 1e5
     iter_num = 0
-
+    train_loss_history = []
     model.train()
     for epoch in range(max_epoch):
-        best_loss = train(train_loader, model, optimizer, epoch, best_loss, snapshot_path)
-
+        best_loss, t = train(train_loader, model, optimizer, epoch, best_loss, snapshot_path)
+        train_loss_history.append(t)
     writer.close()
+    np.save('./UTransform_train_loss.npy', np.array(train_loss_history))

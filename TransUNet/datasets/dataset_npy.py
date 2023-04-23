@@ -63,5 +63,5 @@ class Synapse_dataset(Dataset):
         sample = {'image': image, 'label': label}
         if self.transform:
             sample = self.transform(sample)
-        sample['case_name'] = self.sample_list[idx].strip('\n')
+        sample['case_name'] = self.sample_list[idx].split('.')[0]
         return sample

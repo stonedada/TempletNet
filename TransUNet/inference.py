@@ -21,7 +21,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--volume_path', type=str,
-                    default='/home/stone/dataset/npy_224/test',
+                    default='/home/stone/dataset/npy_128/test',
                     help='root dir for validation volume data')  # for acdc volume_path=root_dir
 parser.add_argument('--dataset', type=str,
                     default='Synapse', help='experiment_name')
@@ -53,7 +53,7 @@ def test(args, model):
                                                                     f"test_{args.model_name}_{args.day_time}")
     os.makedirs(save_path, exist_ok=True)
 
-    db_train = Synapse_dataset(base_dir=args.volume_path, label_dir=args.label_dir, split="train",
+    db_train = Synapse_dataset(base_dir=args.volume_path, label_dir=args.label_dir, split="test",
                                transform=transforms.Compose(
                                    [RandomGenerator(output_size=args.size)]))
     print("The length of test set is: {}".format(len(db_train)))
@@ -61,7 +61,7 @@ def test(args, model):
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
 
-    trainloader = DataLoader(db_train, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True,
+    trainloader = DataLoader(db_train, batch_size=1, shuffle=True, num_workers=4, pin_memory=True,
                              worker_init_fn=worker_init_fn)
 
     model.eval()
@@ -80,8 +80,8 @@ def test(args, model):
     frames_meta = make_dataframe(nbr_rows=len(trainloader))
     with torch.no_grad():
         for i_batch, sampled_batch in enumerate(trainloader):
-            image_batch, label_batch = sampled_batch['image'], sampled_batch['label']
-            # image_batch, label_batch = image_batch.cuda(), label_batch.cuda()
+            image_batch, label_batch, case_name = sampled_batch['image'], sampled_batch['label'], \
+                sampled_batch['case_name'][0]
             image_batch, label_batch = Variable(image_batch.to(device=args.device)), label_batch.to(device='cuda:0')
             outputs = model(image_batch)
 
@@ -92,43 +92,33 @@ def test(args, model):
             dice = mean_dice(x_true, x_pre, thresh)
             mIoU = mean_iou(x_true, x_pre, thresh)
             nrmse = metrics.normalized_root_mse(x_true, x_pre)
-            mse = metrics.mean_squared_error(x_true, x_pre)
             ssim_val = metrics.structural_similarity(x_true, x_pre)
             pcc = pearsonr(x_pre.flatten(), x_true.flatten())
             r2 = r2_metric(x_true, x_pre)
 
-            for k in range(outputs.shape[0]):
-                prediction = torch.squeeze(outputs[k]).cpu().numpy()
-                _image = torch.squeeze(image_batch[k]).cpu().numpy()
-                _label = torch.squeeze(label_batch[k]).cpu().numpy()
-                # image(1,128,128)
+            # Save tif file
+            prediction = torch.squeeze(outputs, dim=0).cpu().numpy()
+            _image = torch.squeeze(image_batch).cpu().numpy()
+            _label = torch.squeeze(label_batch, dim=0).cpu().numpy()
 
-                # imageio.imwrite(f'{save_path}/{i_batch}_{k}_prediction.jpg', prediction)
-                # imageio.imwrite(f'{save_path}/{i_batch}_{k}_image.jpg', _image)
-                # imageio.imwrite(f'{save_path}/{i_batch}_{k}_label.jpg', _label)
-                # save_image(prediction, f'{save_path}/{i_batch}_{k}_prediction.png')
-                # save_image(_image, f'{save_path}/{i_batch}_{k}_image.png')
-                # save_image(_label, f'{save_path}/{i_batch}_{k}_label.png')
-
-                tifffile.imwrite(f'{save_path}/{i_batch}_{k}_prediction.tif', data=prediction)
-                tifffile.imwrite(f'{save_path}/{i_batch}_{k}_image.tif', data=_image)
-                tifffile.imwrite(f'{save_path}/{i_batch}_{k}_label.tif', data=_label)
-
-            iter_num = iter_num + 1
+            tifffile.imwrite(f'{save_path}/{case_name}_pred.tif', data=prediction)
+            tifffile.imwrite(f'{save_path}/{case_name}_image.tif', data=_image)
+            tifffile.imwrite(f'{save_path}/{case_name}_label.tif', data=_label)
 
             # Save csv.file
             meta_row = dict.fromkeys(DF_NAMES)
+            meta_row['MSE'] = loss.item
             meta_row['NRMSE'] = nrmse
             meta_row['SSIM'] = ssim_val
             meta_row['PCC'] = pcc
             meta_row['Dice'] = dice
             meta_row['mIOU'] = mIoU
             meta_row['r2'] = r2
-            frames_meta.loc[iter_num - 1] = meta_row
+            frames_meta.loc[iter_num] = meta_row
+            iter_num = iter_num + 1
 
             # record
-            # loss_bank.append(loss.item())
-            loss_bank.append(mse)
+            loss_bank.append(loss.item())
             nrmse_bank.append(nrmse)
             pcc_bank.append(pcc)
             dice_bank.append(dice)
@@ -136,7 +126,7 @@ def test(args, model):
             ssim_bank.append(ssim_val)
             r2_bank.append(r2)
 
-            logging.info('iteration %d : Loss: %.4f,NRMSE: %f,ssim: %f,PCC: %f,dice: %f,mIoU: %f,R2: %f' % (
+            logging.info('iteration %d : MSELoss: %.4f,NRMSE: %f,ssim: %f,PCC: %f,dice: %f,mIoU: %f,R2: %f' % (
                 iter_num, loss.item(), nrmse, ssim_val, pcc, dice, mIoU, r2))
 
         frames_meta_filename = os.path.join("../predictions", args.model_path,
@@ -167,7 +157,7 @@ if __name__ == "__main__":
         'Synapse': {
             'Dataset': Synapse_dataset,
             'volume_path': '/home/dataset/npy_256/test',
-            'label_dir': '/home/dataset/npy_256/test_label',
+            'label_dir': '/home/dataset/npy_test/test_label',
             'num_classes': 9,
         },
     }
