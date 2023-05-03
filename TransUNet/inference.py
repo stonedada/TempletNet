@@ -4,7 +4,8 @@ import os
 import sys
 import time
 import tifffile
-from torch.nn.modules.loss import MSELoss
+import torch
+from torch.nn.modules.loss import MSELoss, L1Loss
 from torchvision import transforms
 from torch.autograd import Variable
 import random
@@ -27,8 +28,6 @@ parser.add_argument('--dataset', type=str,
                     default='Synapse', help='experiment_name')
 parser.add_argument('--num_classes', type=int,
                     default=4, help='output channel of network')
-parser.add_argument('--label_dir', type=str,
-                    default='./lists/lists_Synapse', help='list dir')
 parser.add_argument('--n_gpu', type=int, default=5, help='total gpu')
 parser.add_argument('--max_iterations', type=int, default=30000, help='maximum epoch number to train')
 parser.add_argument('--max_epochs', type=int, default=150, help='maximum epoch number to train')
@@ -49,95 +48,101 @@ args = parser.parse_args()
 
 
 def test(args, model):
-    save_path = test_save_path if args.is_savenii else os.path.join('../predictions', args.model_path,
-                                                                    f"test_{args.model_name}_{args.day_time}")
-    os.makedirs(save_path, exist_ok=True)
-
-    db_train = Synapse_dataset(base_dir=args.volume_path, label_dir=args.label_dir, split="test",
-                               transform=transforms.Compose(
-                                   [RandomGenerator(output_size=args.size)]))
-    print("The length of test set is: {}".format(len(db_train)))
-
-    def worker_init_fn(worker_id):
-        random.seed(args.seed + worker_id)
-
-    trainloader = DataLoader(db_train, batch_size=1, shuffle=True, num_workers=4, pin_memory=True,
-                             worker_init_fn=worker_init_fn)
-
     model.eval()
-    mse_loss = MSELoss()
-    iter_num = 0
-    thresh = 1
+    mean_loss = []
+    mae_loss = L1Loss()
+    for s in ['val', 'test']:
+        image_root = '{}/{}'.format(args.volume_path, s)
+        gt_root = '{}/{}_label'.format(args.volume_path, s)
+        save_path = test_save_path if args.is_savenii else os.path.join('../predictions', args.model_path,
+                                                                        f"{s}_{args.day_time}")
+        if not os.path.exists(save_path):
+            os.makedirs(save_path, exist_ok=True)
+        db_train = Synapse_dataset(base_dir=image_root, label_dir=gt_root, split="test",
+                                   transform=transforms.Compose(
+                                       [RandomGenerator(output_size=args.size)]))
+        print("The length of test set is: {}".format(len(db_train)))
 
-    loss_bank = []
-    nrmse_bank = []
-    ssim_bank = []
-    dice_bank = []
-    iou_bank = []
-    pcc_bank = []
-    r2_bank = []
+        def worker_init_fn(worker_id):
+            random.seed(args.seed + worker_id)
 
-    frames_meta = make_dataframe(nbr_rows=len(trainloader))
-    with torch.no_grad():
-        for i_batch, sampled_batch in enumerate(trainloader):
-            image_batch, label_batch, case_name = sampled_batch['image'], sampled_batch['label'], \
-                sampled_batch['case_name'][0]
-            image_batch, label_batch = Variable(image_batch.to(device=args.device)), label_batch.to(device='cuda:0')
-            outputs = model(image_batch)
+        trainloader = DataLoader(db_train, batch_size=1, shuffle=True, num_workers=4, pin_memory=True,
+                                 worker_init_fn=worker_init_fn)
 
-            x_true = torch.squeeze(label_batch).cpu().numpy()
-            x_pre = torch.squeeze(outputs).cpu().numpy()
+        iter_num = 0
 
-            loss = mse_loss(outputs, label_batch)
-            dice = mean_dice(x_true, x_pre, thresh)
-            mIoU = mean_iou(x_true, x_pre, thresh)
-            nrmse = metrics.normalized_root_mse(x_true, x_pre)
-            ssim_val = metrics.structural_similarity(x_true, x_pre)
-            pcc = pearsonr(x_pre.flatten(), x_true.flatten())
-            r2 = r2_metric(x_true, x_pre)
+        loss_bank = []
+        nrmse_bank = []
+        ssim_bank = []
+        dice_bank = []
+        iou_bank = []
+        pcc_bank = []
+        r2_bank = []
 
-            # Save tif file
-            prediction = torch.squeeze(outputs, dim=0).cpu().numpy()
-            _image = torch.squeeze(image_batch).cpu().numpy()
-            _label = torch.squeeze(label_batch, dim=0).cpu().numpy()
+        frames_meta = make_dataframe(nbr_rows=len(trainloader))
+        with torch.no_grad():
+            for i_batch, sampled_batch in enumerate(trainloader):
+                image_batch, label_batch, case_name = sampled_batch['image'], sampled_batch['label'], \
+                    sampled_batch['case_name'][0]
+                image_batch, label_batch = Variable(image_batch.to(device=args.device)), label_batch.to(device='cuda:0')
+                outputs = model(image_batch)
 
-            tifffile.imwrite(f'{save_path}/{case_name}_pred.tif', data=prediction)
-            tifffile.imwrite(f'{save_path}/{case_name}_image.tif', data=_image)
-            tifffile.imwrite(f'{save_path}/{case_name}_label.tif', data=_label)
+                x_true = torch.squeeze(label_batch).cpu().numpy()
+                x_pre = torch.squeeze(outputs).cpu().numpy()
 
-            # Save csv.file
-            meta_row = dict.fromkeys(DF_NAMES)
-            meta_row['MSE'] = loss.item
-            meta_row['NRMSE'] = nrmse
-            meta_row['SSIM'] = ssim_val
-            meta_row['PCC'] = pcc
-            meta_row['Dice'] = dice
-            meta_row['mIOU'] = mIoU
-            meta_row['r2'] = r2
-            frames_meta.loc[iter_num] = meta_row
-            iter_num = iter_num + 1
+                # evaluate
+                loss = mae_loss(outputs, label_batch)
+                dice = dice_metric(x_true, x_pre)
+                mIoU = iou_metric(x_true, x_pre)
+                nrmse = metrics.normalized_root_mse(x_true, x_pre)
+                ssim = metrics.structural_similarity(x_true, x_pre, win_size=21,
+                                                     data_range=x_true.max() - x_true.min())
+                pcc = pearsonr(x_pre.flatten(), x_true.flatten())
+                r2 = r2_metric(x_true, x_pre)
 
-            # record
-            loss_bank.append(loss.item())
-            nrmse_bank.append(nrmse)
-            pcc_bank.append(pcc)
-            dice_bank.append(dice)
-            iou_bank.append(mIoU)
-            ssim_bank.append(ssim_val)
-            r2_bank.append(r2)
+                # Save tif file
+                prediction = torch.squeeze(outputs, dim=0).cpu().numpy()
+                _image = torch.squeeze(image_batch).cpu().numpy()
+                _label = torch.squeeze(label_batch, dim=0).cpu().numpy()
 
-            logging.info('iteration %d : MSELoss: %.4f,NRMSE: %f,ssim: %f,PCC: %f,dice: %f,mIoU: %f,R2: %f' % (
-                iter_num, loss.item(), nrmse, ssim_val, pcc, dice, mIoU, r2))
+                tifffile.imwrite(f'{save_path}/{case_name}_pred.tif', data=prediction)
+                tifffile.imwrite(f'{save_path}/{case_name}_image.tif', data=_image)
+                tifffile.imwrite(f'{save_path}/{case_name}_label.tif', data=_label)
 
-        frames_meta_filename = os.path.join("../predictions", args.model_path,
-                                            f"inference_{args.model_name}_{args.day_time}.csv")
-        frames_meta.to_csv(frames_meta_filename, sep=',')
+                # Save csv.file
+                meta_row = dict.fromkeys(DF_NAMES)
+                meta_row['MAE'] = loss.item()
+                meta_row['NRMSE'] = nrmse
+                meta_row['SSIM'] = ssim
+                meta_row['PCC'] = pcc
+                meta_row['Dice'] = dice
+                meta_row['mIOU'] = mIoU
+                meta_row['r2'] = r2
+                frames_meta.loc[iter_num] = meta_row
+                iter_num = iter_num + 1
 
-        print('MSELoss: {:.4f}, NRMSE: {:.4f}, Dice: {:.4f}, IoU: {:.4f}, ssim:{:.4f}, PCC:{:.4f}, R2:{:.4f}'.
-              format(np.mean(loss_bank), np.mean(nrmse_bank), np.mean(dice_bank), np.mean(iou_bank),
-                     np.mean(ssim_bank), np.mean(pcc_bank), np.mean(r2_bank)))
+                # Record
+                loss_bank.append(loss.item())
+                nrmse_bank.append(nrmse)
+                pcc_bank.append(pcc)
+                dice_bank.append(dice)
+                iou_bank.append(mIoU)
+                ssim_bank.append(ssim)
+                r2_bank.append(r2)
 
-        return np.mean(loss_bank)
+                logging.info('iteration %d : MAELoss: %.4f,NRMSE: %f,ssim: %f,PCC: %f,dice: %f,mIoU: %f,R2: %f' % (
+                    iter_num, loss.item(), nrmse, ssim, pcc, dice, mIoU, r2))
+
+            frames_meta_filename = os.path.join("../predictions", args.model_path,
+                                                f"{s}_inference_{args.day_time}.csv")
+            frames_meta.to_csv(frames_meta_filename, sep=',')
+
+            print('{} MAELoss: {:.4f}, NRMSE: {:.4f}, Dice: {:.4f}, IoU: {:.4f}, ssim:{:.4f}, PCC:{:.4f}, R2:{:.4f}'.
+                  format(s, np.mean(loss_bank), np.mean(nrmse_bank), np.mean(dice_bank), np.mean(iou_bank),
+                         np.mean(ssim_bank), np.mean(pcc_bank), np.mean(r2_bank)))
+            mean_loss.append(np.mean(loss_bank))
+
+    return mean_loss[0]
 
 
 if __name__ == "__main__":
@@ -156,8 +161,8 @@ if __name__ == "__main__":
     dataset_config = {
         'Synapse': {
             'Dataset': Synapse_dataset,
-            'volume_path': '/home/dataset/npy_256/test',
-            'label_dir': '/home/dataset/npy_test/test_label',
+            'volume_path': '/home/dataset/npy_256',
+            'label_dir': '/home/dataset/npy_256',
             'num_classes': 9,
         },
     }
@@ -174,13 +179,10 @@ if __name__ == "__main__":
     bias = True
     heads = 4
     size = (128, 128)
-    # channels = (3, 32, 64, 128)
-    # is_residual = True
-    # bias = True
-    # heads = 2
-    # size = (128, 128)
+    task = 'F-actin'
+    # task = 'nuclei'
 
-    model_path = f'res_{is_residual}_head_{heads}_ch_{channels[-1]}'
+    model_path = f'res_{is_residual}_head_{heads}_ch_{channels[-1]}_{task}'
 
     device = get_device()
     print(device, torch.cuda.device_count())
@@ -222,8 +224,5 @@ if __name__ == "__main__":
         os.makedirs(test_save_path, exist_ok=True)
     else:
         test_save_path = None
-
-    # if args.n_gpu > 1:
-    #     model = nn.DataParallel(model)
 
     test(args, model)

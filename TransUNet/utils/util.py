@@ -114,7 +114,7 @@ def test_single_volume(image, label, net, classes, patch_size=[256, 256], test_s
         sitk.WriteImage(lab_itk, test_save_path + '/'+ case + "_gt.nii.gz")
     return metric_list
 
-DF_NAMES = ['MSE'
+DF_NAMES = ['MAE',
             "NRMSE",
             "SSIM",
             "PCC",

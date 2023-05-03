@@ -3,10 +3,10 @@
 # @Github   :   https://github.com/stonedada
 
 import math
-import torch
+import sklearn
 import numpy as np
 from scipy.stats._stats_py import _sum_of_squares
-
+from sklearn.metrics import f1_score
 
 def mean_dice_np(y_true, y_pred, **kwargs):
     """
@@ -20,6 +20,7 @@ def mean_dice_np(y_true, y_pred, **kwargs):
     dice = 2 * (intersection + smooth) / (mask_sum + smooth)
     return dice
 
+
 def mean_dice(y_true, y_pred, thresh):
     """
     compute mean dice for binary regression task via numpy
@@ -28,11 +29,12 @@ def mean_dice(y_true, y_pred, thresh):
     a = np.abs(y_pred - y_true)
     b = (a < thresh).astype(int)
     intersection = np.sum(b, axis=axes)
-    mask_sum = y_true.shape[0]*y_true.shape[1]*2
-    
+    mask_sum = y_true.shape[0] * y_true.shape[1] * 2
+
     smooth = .001
     dice = 2 * (intersection + smooth) / (mask_sum + smooth)
     return dice
+
 
 def mean_iou_np(y_true, y_pred, **kwargs):
     """
@@ -47,6 +49,7 @@ def mean_iou_np(y_true, y_pred, **kwargs):
     iou = (intersection + smooth) / (union + smooth)
     return iou
 
+
 def mean_iou(y_true, y_pred, thresh):
     """
     compute mean iou for regression task via numpy
@@ -55,40 +58,14 @@ def mean_iou(y_true, y_pred, thresh):
     a = np.abs(y_pred - y_true)
     b = (a < thresh).astype(int)
     intersection = np.sum(b, axis=axes)
-    mask_sum = y_true.shape[0]*y_true.shape[1]*2
+    mask_sum = y_true.shape[0] * y_true.shape[1] * 2
     union = mask_sum - intersection
     smooth = .001
     iou = (intersection + smooth) / (union + smooth)
     return iou
 
-# 计算特征和类的平均值
-def calcMean(x,y):
-    sum_x = sum(x)
-    sum_y = sum(y)
-    n = len(x)
-    x_mean = float(sum_x+0.0)/n
-    y_mean = float(sum_y+0.0)/n
-    return x_mean,y_mean
 
-# 计算Pearson系数
-def calcPearson(x,y):
-    x_mean,y_mean = calcMean(x,y)   # 计算x,y向量平均值
-    n = len(x)
-    sumTop = 0.0
-    sumBottom = 0.0
-    x_pow = 0.0
-    y_pow = 0.0
-    for i in range(n):
-        sumTop += (x[i]-x_mean)*(y[i]-y_mean)
-    for i in range(n):
-        x_pow += math.pow(x[i]-x_mean,2)
-    for i in range(n):
-        y_pow += math.pow(y[i]-y_mean,2)
-    sumBottom = math.sqrt(x_pow*y_pow)
-    p = sumTop/sumBottom
-    return p
 def pearsonr(x, y):
-
     # x and y should have same length.
     x = np.asarray(x)
     y = np.asarray(y)
@@ -100,7 +77,8 @@ def pearsonr(x, y):
     r_den = np.sqrt(_sum_of_squares(xm) * _sum_of_squares(ym))
     r = r_num / r_den
 
-    return  r
+    return r
+
 
 def r2_metric(target, prediction):
     """Coefficient of determination of target and prediction
@@ -114,16 +92,40 @@ def r2_metric(target, prediction):
     cur_r2 = 1 - (ss_res / (ss_tot + 1e-8))
     return cur_r2
 
-def tensor_to_tif(input: torch.Tensor, channel: int = 32, shape: tuple = (256, 256), save_path: str = "/home/yingmuzhi/microDL_3D/_yingmuzhi/output_tiff.tiff", dtype: str="uint16", mean=0, std=1):
+def dice_metric(target, prediction):
+    """Dice similarity coefficient (F1 score) of binary target and prediction.
+    Reports global metric.
+    Not using mask decorator for binary data evaluation.
+
+    :param np.array target: ground truth array
+    :param np.array prediction: model prediction
+    :return float dice: Dice for binarized data
     """
-    introduce:
-        transform tensor to tif and save
+    target_bin = binarize_array(target)
+    pred_bin = binarize_array(prediction)
+    return f1_score(target_bin, pred_bin, average='micro')
+
+
+def iou_metric(target, prediction):
     """
-    import tifffile
-    
-    npy = input.numpy()
-    npy = npy * std + mean
-    npy = npy.astype(dtype=dtype)
-    npy = npy.reshape((1, channel, shape[0], shape[1]))
-    tifffile.imsave(save_path, npy)
-    print("done")
+    compute mean iou for binary segmentation map via numpy
+    """
+    y_pred = binarize_array(prediction)
+    y_true = binarize_array(target)
+    intersection = np.sum(np.abs(y_pred * y_true))
+    mask_sum = np.sum(np.abs(y_true)) + np.sum(np.abs(y_pred))
+    union = mask_sum - intersection
+
+    smooth = .001
+    iou = (intersection + smooth) / (union + smooth)
+    return iou
+
+
+def binarize_array(im):
+    """Binarize image
+
+    :param np.array im: Prediction or target array
+    :return np.array im_bin: Flattened and binarized array
+    """
+    im_bin = (im.flatten() / im.max()) > .5
+    return im_bin.astype(np.uint8)
