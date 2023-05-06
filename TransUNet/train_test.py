@@ -115,9 +115,9 @@ if __name__ == "__main__":
     dataset_name = args.dataset
     dataset_config = {
         'Synapse': {
-            'root_path': '/home/dataset/npy_256/train',
-            'label_dir': '/home/dataset/npy_256/train_label',
-            'volume_path': '/home/dataset/npy_test/npy_512',
+            'root_path': '/home/dataset/nuclei/train',
+            'label_dir': '/home/dataset/nuclei/train_label',
+            'volume_path': '/home/dataset/nuclei',
         },
     }
 
@@ -132,7 +132,8 @@ if __name__ == "__main__":
     bias = True
     heads = 4
     size = (128, 128)
-    task = 'F-actin'
+    # task = 'F-actin'
+    task = 'nuclei'
 
     model_path = f'res_{is_residual}_head_{heads}_ch_{channels[-1]}_{task}'
     device = get_device()
@@ -154,7 +155,7 @@ if __name__ == "__main__":
 
     model = TransformerUNetParallel(channels, heads, size[0], is_residual, bias)
     snapshot = os.path.join(snapshot_path, 'best_model.pth')
-    if not os.path.exists(snapshot): snapshot = snapshot.replace('best_model', 'UTransform-' + str(102) + '_pre')
+    if not os.path.exists(snapshot): snapshot = snapshot.replace('best_model', 'UTransform-' + str(129) + '_pre')
     print('snapshot', snapshot, os.path.exists(snapshot))
     model.load_state_dict(torch.load(snapshot), strict=False)
     from datasets.dataset_npy import Synapse_dataset, RandomGenerator

@@ -58,7 +58,7 @@ def test(args, model):
                                                                         f"{s}_{args.day_time}")
         if not os.path.exists(save_path):
             os.makedirs(save_path, exist_ok=True)
-        db_train = Synapse_dataset(base_dir=image_root, label_dir=gt_root, split="test",
+        db_train = Synapse_dataset(base_dir=image_root, label_dir=gt_root, split="train",
                                    transform=transforms.Compose(
                                        [RandomGenerator(output_size=args.size)]))
         print("The length of test set is: {}".format(len(db_train)))

@@ -45,7 +45,7 @@ class Synapse_dataset(Dataset):
         if self.split == "train":
             slice_name = self.sample_list[idx].strip('\n')
             data_path = os.path.join(self.data_dir, slice_name)
-            label_name = slice_name.replace('c001', 'c000').replace('sl0-3', 'sl0-1')
+            label_name = slice_name.replace('c002', 'c000').replace('sl0-3', 'sl0-1')
             label_path = self.label_dir + label_name
             image = np.load(data_path)
             label = np.load(label_path)
