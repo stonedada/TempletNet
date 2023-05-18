@@ -8,6 +8,8 @@ from torch.nn import MSELoss, L1Loss
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms
 from tensorboardX import SummaryWriter
+from torchviz import make_dot
+
 from inference import *
 import random
 import numpy as np
@@ -193,6 +195,16 @@ if __name__ == "__main__":
     iter_num = 0
     train_loss_history = []
     model.train()
+    # x = torch.randn(1, 3, 128, 128).to(device)
+    # y = model(x)
+    # g = make_dot(y)
+    # # g.render('model/espnet_model', view=False)
+    # MyConvNetVis = make_dot(y, params=dict(list(model.named_parameters()) + [('x', x)]))
+    # MyConvNetVis.format = "png"
+    # # 指定文件生成的文件夹
+    # MyConvNetVis.directory = "model"
+    # # 生成文件
+    # MyConvNetVis.view()
     for epoch in range(max_epoch):
         best_loss, t = train(train_loader, model, optimizer, epoch, best_loss, snapshot_path)
         train_loss_history.append(t)

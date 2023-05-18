@@ -4,9 +4,9 @@ import torch.nn as nn
 import sys
 sys.path.append("..")
 sys.path.append(".")
-from TransUNet.utils import config
-from TransUNet.utils.config import get_device
-from TransUNet.models.EncoderDecoder import ConvBlock, EncoderLayer, DecoderLayer
+from Network.utils import config
+from Network.utils.config import get_device
+from Network.models.EncoderDecoder import ConvBlock, EncoderLayer, DecoderLayer
 
 DEVICE = get_device()
 
