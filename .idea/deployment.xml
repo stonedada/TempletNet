@@ -3,13 +3,6 @@
   <component name="PublishConfigData" autoUpload="Always" serverName="root@222.31.135.72:9005 password (4)" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
     <option name="confirmBeforeUploading" value="false" />
     <serverData>
-      <paths name="A40">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
       <paths name="ai_9003">
         <serverdata>
           <mappings>
@@ -52,6 +45,13 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="root@222.31.135.72:9005 password (10)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="root@222.31.135.72:9005 password (2)">
         <serverdata>
           <mappings>
@@ -81,6 +81,27 @@
         </serverdata>
       </paths>
       <paths name="root@222.31.135.72:9005 password (6)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@222.31.135.72:9005 password (7)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@222.31.135.72:9005 password (8)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="root@222.31.135.72:9005 password (9)">
         <serverdata>
           <mappings>
             <mapping local="$PROJECT_DIR$" web="/" />
